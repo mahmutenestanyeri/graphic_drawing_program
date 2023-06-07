@@ -9,6 +9,9 @@ import pandas as pd
 from plotly.offline import iplot,plot
 from collections import Counter
 from matplotlib.figure import Figure
+import json, csv, os, glob
+from sklearn.preprocessing import MinMaxScaler
+
 
 grafikler1 = {              
                 'HeatMap': 1,
@@ -34,6 +37,7 @@ class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         lodData=None
         logDf=None
+        logDf_normalized=None
         describe_table=None
         columnA=None
         self.sayac=0
@@ -212,8 +216,8 @@ class Ui_MainWindow(object):
 
         self.verticalLayout.setObjectName("verticalLayout")
         self.label_icon = QtWidgets.QLabel(parent=self.frame_left_bar)
-        self.label_icon.setMinimumSize(QtCore.QSize(100, 100))
-        self.label_icon.setMaximumSize(QtCore.QSize(100, 100))
+        self.label_icon.setMinimumSize(QtCore.QSize(150, 150))
+        self.label_icon.setMaximumSize(QtCore.QSize(150, 150))
         font = QtGui.QFont()
         font.setKerning(True)
         self.label_icon.setFont(font)
@@ -311,7 +315,6 @@ class Ui_MainWindow(object):
         self.pushButton_dosya_ekle_2.setObjectName("dosya_ekle")
         self.horizontalLayout_2.addWidget(self.pushButton_dosya_ekle_2)
         self.verticalLayout.addWidget(self.frame_15)
-        #self.pushButton_dosya_ekle_2.setFixedSize(self.pushButton_dosya_ekle_2.sizeHint().width(), 400)
         self.pushButton_dosya_ekle_2.setFixedSize(280, 150)
 
 
@@ -939,13 +942,18 @@ class Ui_MainWindow(object):
         self.pushButton_9.setHidden(True) #Uzaklastir
         self.pushButton_10.setHidden(True) #Reset
 
-#---------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------------------------------------------------------------------------
 
     def dosya_ekle(self):
-        
+        global columnA
+        global logDf
+        global logData
+
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.AnyFile)
-        file_dialog.setNameFilter("CSV Dosyaları (*.csv)")
+        file_dialog.setNameFilter("CSV Dosyaları (*.csv *.CSV);;Json Dosyaları (*.json *.JSON)")
 
         if file_dialog.exec_():
             import re
@@ -954,95 +962,226 @@ class Ui_MainWindow(object):
             # Seçilen dosyayı kullanarak yapmak istediğiniz işlemi burada gerçekleştirebilirsiniz
             print("Seçilen dosya:", file_path)
 
-            global logData
-            logData = pd.read_csv("{}".format(file_path)) # pd.read_csv("log.csv")
+            dosya_boyutu = os.path.getsize(file_path)
 
-            self.frame_4.setHidden(True) #Sutun 1
-            self.frame_5.setHidden(True) #Sutun 2
-            self.frame_10.setHidden(True) #Sutun 3
-            self.frame_6.setHidden(True) #Grafikler
-            self.frame_7.setHidden(True) #Grafik Çizdir
-            self.frame_8.setHidden(False) #boyut degeri gir
-            self.frame_9.setHidden(False) #boyur degeri buton
-            self.frame_11.setHidden(False) #dosya ekle buton
-            self.frame_15.setHidden(True) #dosya ekle 2 buton
+            if file_path.lower().endswith('.csv') and dosya_boyutu > 10000 or file_path.lower().endswith('.json') and dosya_boyutu>2500:
+
+                if file_path.lower().endswith('.csv'):
+                    try:
+                        logData = pd.read_csv("{}".format(file_path)) # pd.read_csv
+
+                        self.frame_4.setHidden(True) #Sutun 1
+                        self.frame_5.setHidden(True) #Sutun 2
+                        self.frame_10.setHidden(True) #Sutun 3
+                        self.frame_6.setHidden(True) #Grafikler
+                        self.frame_7.setHidden(True) #Grafik Çizdir
+                        self.frame_8.setHidden(False) #boyut degeri gir
+                        self.frame_9.setHidden(False) #boyur degeri buton
+                        self.frame_11.setHidden(False) #dosya ekle buton
+                        self.frame_15.setHidden(True) #dosya ekle 2 buton
+
+
+                        print(logData)
+
+
+                        logDf = pd.DataFrame(logData) # DataFrame haline getirip logDf ye atadım
+
+                        logDf.columns = [re.sub(r'[^a-zA-Z0-9]', '', col) for col in logDf.columns]
+
+                        column_names = logDf.columns.tolist()
+
+                        # İçerikleri aynı olan sütunları bul
+                        duplicated_columns = logDf.loc[:, logDf.T.duplicated()].columns.tolist()
+                        # İçerikleri aynı olan sütunlardan sadece bir tanesini sil
+                        logDf = logDf.drop(columns=duplicated_columns[1:])
+
+                        logDf = logDf.dropna() # Boş değerleri sildim
+                        logDf = logDf.applymap(lambda x: None if x == 0.000000 else x) # DataFrame içerisindeki tüm 0 değerlerini siler
+
+                        print("é"*100)
+                        print(logDf)
+
+                        string_columns = logDf.select_dtypes(include=['object']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
+
+                        string_columns = logDf.select_dtypes(include=['bool']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
+
+                        logDf = logDf.astype(float)
+
+                        logDf = logDf.applymap(lambda x: None if x == 0 else x) # DataFrame içerisindeki tüm 0 değerlerini siler
+
+                        string_columns = logDf.select_dtypes(include=['object']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
+
+                        string_columns = logDf.select_dtypes(include=['bool']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
+
+                        logDf = logDf.astype(float)
+
+
+                        def detect_outliers(logDf,features):
+                            outlier_indices = []
+
+                            for c in features:
+                                # 1st quartile
+                                Q1 = np.percentile(logDf[c],25)
+                                # 3rd quartile
+                                Q3 = np.percentile(logDf[c],75)
+
+                                # IQR
+                                IQR = Q3 - Q1
+                                # Outlier step
+                                outlier_step = IQR * 1.5
+                                # detect outlier and their indeces
+                                outlier_list_col = logDf[(logDf[c] < Q1 - outlier_step) | (logDf[c] > Q3 + outlier_step)].index
+                                # store indeces
+                                outlier_indices.extend(outlier_list_col)
+
+                            outlier_indices = Counter(outlier_indices)
+                            multiple_outliers = list(i for i, v in outlier_indices.items() if v > 2)
+
+                            return multiple_outliers
+
+                        columnA = dict(zip(logDf.columns, range(len(logDf.columns))))
+
+                        # Tablodaki verilerin sayısal değerlerini 0-1 arasında sabitleme işlemi
+                        # MinMaxScaler nesnesini oluşturma
+                        global logDf_normalized
+                        scaler = MinMaxScaler()
+
+                        # Verileri normalize etme
+                        logDf_normalized = scaler.fit_transform(logDf)
+
+                        # Normalize edilmiş verileri yeni bir DataFrame'e dönüştürme
+                        logDf_normalized = pd.DataFrame(logDf_normalized, columns=logDf.columns)
+
+                        # Sayısal değerleri noktadan sonra 4 haneyle sınırlama
+                        logDf_normalized = logDf_normalized.round(4)
+
+                        print('-'*100)
+                        print(logDf_normalized)
+
+                    except:
+                        message_box = QMessageBox()  # Mesaj kutusu oluşturma
+                        message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+                        message_box.setText("Dosya verileri hatalı!")
+                        message_box.setIcon(QMessageBox.Information)
+                        message_box.exec_()  # Mesaj kutusunu gösterme
             
-            
-            print(logData)
+    # eğer json dosyası seçilirse 
+                elif file_path.lower().endswith('.json'):
+                    print ("Hello World/n")
+                    try:
+                        self.frame_4.setHidden(True) #Sutun 1
+                        self.frame_5.setHidden(True) #Sutun 2
+                        self.frame_10.setHidden(True) #Sutun 3
+                        self.frame_6.setHidden(True) #Grafikler
+                        self.frame_7.setHidden(True) #Grafik Çizdir
+                        self.frame_8.setHidden(False) #boyut degeri gir
+                        self.frame_9.setHidden(False) #boyur degeri buton
+                        self.frame_11.setHidden(False) #dosya ekle buton
+                        self.frame_15.setHidden(True) #dosya ekle 2 buton
 
-            global columnA
-            global logDf
-            logDf = pd.DataFrame(logData) # DataFrame haline getirip logDf ye atadım
+                        #logData = json_load("{}".format(file_path))
+                        jsonData =  open("{}".format(file_path), 'r')
 
-            logDf.columns = [re.sub(r'[^a-zA-Z0-9]', '', col) for col in logDf.columns]
-            
-            column_names = logDf.columns.tolist()
+                        oku_json = jsonData.read()
 
-            # İçerikleri aynı olan sütunları bul
-            duplicated_columns = logDf.loc[:, logDf.T.duplicated()].columns.tolist()
-            # İçerikleri aynı olan sütunlardan sadece bir tanesini sil
-            logDf = logDf.drop(columns=duplicated_columns[1:])
-            
-            logDf = logDf.dropna() # Boş değerleri sildim
-            logDf = logDf.applymap(lambda x: None if x == 0 else x) # DataFrame içerisindeki tüm 0 değerlerini siler
+                        logData=json.loads(oku_json)
 
+                        logDf=pd.DataFrame(logData)
+                        print(logDf)
 
-            string_columns = logDf.select_dtypes(include=['object']).columns
-            logDf = logDf.drop(string_columns, axis=1)
+                        logDf.columns = [re.sub(r'[^a-zA-Z0-9]', '', col) for col in logDf.columns]
 
-            string_columns = logDf.select_dtypes(include=['bool']).columns
-            logDf = logDf.drop(string_columns, axis=1)
+                        column_names = logDf.columns.tolist()
 
+                        # İçerikleri aynı olan sütunları bul
+                        #ayni_columns = logDf.loc[:, logDf.T.duplicated()].columns.tolist()
+                        # İçerikleri aynı olan sütunlardan sadece bir tanesini sil
+                        #logDf = logDf.drop(columns=ayni_columns[1:])
 
-            logDf = logDf.astype(float)
-
-
-            logDf = logDf.applymap(lambda x: None if x == 0 else x) # DataFrame içerisindeki tüm 0 değerlerini siler
-
-            string_columns = logDf.select_dtypes(include=['object']).columns
-            logDf = logDf.drop(string_columns, axis=1)
-
-            string_columns = logDf.select_dtypes(include=['bool']).columns
-            logDf = logDf.drop(string_columns, axis=1)
-
-            logDf = logDf.astype(float)
+                        logDf = logDf.dropna() # Boş değerleri sildim
+                        logDf = logDf.applymap(lambda x: None if x == 0 else x) # DataFrame içerisindeki tüm 0 değerlerini siler
 
 
-            def detect_outliers(logDf,features):
-                outlier_indices = []
+                        string_columns = logDf.select_dtypes(include=['object']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
 
-                for c in features:
-                    # 1st quartile
-                    Q1 = np.percentile(logDf[c],25)
-                    # 3rd quartile
-                    Q3 = np.percentile(logDf[c],75)
+                        string_columns = logDf.select_dtypes(include=['bool']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
 
-                    # IQR
-                    IQR = Q3 - Q1
-                    # Outlier step
-                    outlier_step = IQR * 1.5
-                    # detect outlier and their indeces
-                    outlier_list_col = logDf[(logDf[c] < Q1 - outlier_step) | (logDf[c] > Q3 + outlier_step)].index
-                    # store indeces
-                    outlier_indices.extend(outlier_list_col)
 
-                outlier_indices = Counter(outlier_indices)
-                multiple_outliers = list(i for i, v in outlier_indices.items() if v > 2)
+                        logDf = logDf.astype(float)
 
-                return multiple_outliers
 
-            columnA = dict(zip(logDf.columns, range(len(logDf.columns))))
+                        logDf = logDf.applymap(lambda x: None if x == 0 else x) # DataFrame içerisindeki tüm 0 değerlerini siler
 
-            BolunmusDf = pd.DataFrame()
+                        string_columns = logDf.select_dtypes(include=['object']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
 
-            # logDf'deki sütunları BolunmusDf'ye bölelim
-            for column in logDf.columns:
-                max_value = logDf[column].max()
-                BolunmusDf[column] = logDf[column] / max_value
+                        string_columns = logDf.select_dtypes(include=['bool']).columns
+                        logDf = logDf.drop(string_columns, axis=1)
 
-            # Sonucu gösterelim
-            print(BolunmusDf)
-            
+                        logDf = logDf.astype(float)
+
+
+                        def detect_outliers(logDf,features):
+                            outlier_indices = []
+
+                            for c in features:
+                                # 1st quartile
+                                Q1 = np.percentile(logDf[c],25)
+                                # 3rd quartile
+                                Q3 = np.percentile(logDf[c],75)
+
+                                # IQR
+                                IQR = Q3 - Q1
+                                # Outlier step
+                                outlier_step = IQR * 1.5
+                                # detect outlier and their indeces
+                                outlier_list_col = logDf[(logDf[c] < Q1 - outlier_step) | (logDf[c] > Q3 + outlier_step)].index
+                                # store indeces
+                                outlier_indices.extend(outlier_list_col)
+
+                            outlier_indices = Counter(outlier_indices)
+                            multiple_outliers = list(i for i, v in outlier_indices.items() if v > 2)
+
+                            return multiple_outliers
+
+                        columnA = dict(zip(logDf.columns, range(len(logDf.columns))))
+
+                        # Tablodaki verilerin sayısal değerlerini 0-1 arasında sabitleme işlemi
+                        # MinMaxScaler nesnesini oluşturma
+                        scaler = MinMaxScaler()
+
+                        # Verileri normalize etme
+                        logDf_normalized = scaler.fit_transform(logDf)
+
+                        # Normalize edilmiş verileri yeni bir DataFrame'e dönüştürme
+                        logDf_normalized = pd.DataFrame(logDf_normalized, columns=logDf.columns)
+
+                        # Sayısal değerleri noktadan sonra 4 haneyle sınırlama
+                        logDf_normalized = logDf_normalized.round(4)
+
+                        print('-'*100)
+                        print(logDf_normalized)
+
+                    except:
+                        message_box = QMessageBox()  # Mesaj kutusu oluşturma
+                        message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+                        message_box.setText("Dosya verileri hatalı!")
+                        message_box.setIcon(QMessageBox.Information)
+                        message_box.exec_()  # Mesaj kutusunu gösterme
+
+            else:
+                message_box = QMessageBox()  # Mesaj kutusu oluşturma
+                message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+                message_box.setText("Dosya Boyutu Yetersiz!")
+                message_box.setIcon(QMessageBox.Information)
+                message_box.exec_()  # Mesaj kutusunu gösterme
+
 
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1050,7 +1189,7 @@ class Ui_MainWindow(object):
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     #Yakinlastir
-    def zoom_in(self):    
+    def zoom_in(self):
         scale_factor = 1.1  # Yakınlaştırma faktörü
         #self.sayac = self.sayac+1
         print('Yakinlas: '+ str(self.sayac))
@@ -1102,9 +1241,22 @@ class Ui_MainWindow(object):
         else:
             message_box = QMessageBox()  # Mesaj kutusu oluşturma
             message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-            message_box.setText("Uzaklaştırma işlemi yapabilmeniz için öncelikle Yakınlaştırmanız gerekmektedir!")
+            message_box.setText("Uzaklaştırma işlemi yapılamıyor!")
             message_box.setIcon(QMessageBox.Information)
             message_box.exec_()  # Mesaj kutusunu gösterme
+
+
+
+    def reset_yap(self):
+        self.sayac=0
+        self.grafik_widget.setFixedSize(1600, 800)
+        dosya_listesi = os.listdir("graphic-outputs/")
+        dosya_listesi.sort(key=lambda x: os.path.getmtime(os.path.join("graphic-outputs/", x)), reverse=True)
+        en_son_eklenen_dosya = dosya_listesi[0]
+
+        # Dosya yolunu oluşturma
+        dosya_yolu = os.path.join("graphic-outputs/", en_son_eklenen_dosya)
+        self.grafik_widget.setPixmap(QtGui.QPixmap(dosya_yolu))
 
 
 #------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -1120,7 +1272,7 @@ class Ui_MainWindow(object):
 
             self.column_info_goster.setGeometry(QtCore.QRect(25, 25, 1390, 800))
 
-            logDf_desc = logDf.describe()
+            logDf_desc = logDf.describe() #verisetinin genel özeti max-min-std
 
             # Tablo boyutunu ayarla
             self.column_info_goster.setRowCount(len(logDf_desc.columns))  # sütun sayısı için setRowCount()
@@ -1141,7 +1293,7 @@ class Ui_MainWindow(object):
         else:
             message_box = QMessageBox()  # Mesaj kutusu oluşturma
             message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-            message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv dosyası ekleyin)")
+            message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv veya .json dosyası ekleyin)")
             message_box.setIcon(QMessageBox.Information)
             message_box.exec_()  # Mesaj kutusunu gösterme
 
@@ -1155,13 +1307,13 @@ class Ui_MainWindow(object):
         if 'logDf' in locals() or 'logDf' in globals():
             self.table_widget.setGeometry(QtCore.QRect(25, 25, 1390, 830))
             # Tablo boyutunu ayarla
-            self.table_widget.setRowCount(len(logDf.head(50)))
+            self.table_widget.setRowCount(len(logDf.head(100)))
             self.table_widget.setColumnCount(len(logDf.columns))
             # Sütun başlıklarını ayarla
             self.table_widget.setHorizontalHeaderLabels(logDf.columns)
             
             # Tabloyu doldur
-            for i, row in enumerate(logDf.head(50).iterrows()):
+            for i, row in enumerate(logDf.head(100).iterrows()):
                 for j, value in enumerate(row[1]):
                     item = QtWidgets.QTableWidgetItem(str(value))
                     self.table_widget.setItem(i, j, item)
@@ -1171,7 +1323,7 @@ class Ui_MainWindow(object):
         else:
             message_box = QMessageBox()  # Mesaj kutusu oluşturma
             message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-            message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv dosyası ekleyin)")
+            message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv veya .json dosyası ekleyin)")
             message_box.setIcon(QMessageBox.Information)
             message_box.exec_()  # Mesaj kutusunu gösterme
 
@@ -1186,9 +1338,6 @@ class Ui_MainWindow(object):
 
         # Öğenin minimum boyutu 1050x600 olarak ayarlanıyor
         self.grafik_gorsel.setMinimumSize(QtCore.QSize(1400,800))
-        # Öğenin maksimum boyutu ayarlanıyor
-        #self.grafik_gorsel.setMaximumSize(QtCore.QSize(16777215, 16777215))
-        # Öğenin içeriği "anayurt-icon.png" dosyasından yükleniyor
         self.grafik_gorsel.setPixmap(QtGui.QPixmap("grafik-tablosu.png"))
         # Öğenin içeriği boyutuna göre ölçeklendiriliyor
         self.grafik_gorsel.setScaledContents(True)
@@ -1197,11 +1346,20 @@ class Ui_MainWindow(object):
         # Öğeye "grafik_gorsel" ismi atanıyor
         self.grafik_gorsel.setObjectName("grafik_gorsel")
 
+
+    
+        
+
+
+
+    
+
 #-------------------------------------------------------------------------------------Buradan İtibaren Değişim ve İndirgemeler Yapıldı------------------------------------------------------------------------------#
 
 #Kullanıcının girdiği toplam boyut sayısını bu kısımda alıyoruuz
     def boyut_al(self):
         self.boyut = self.lineEdit_column_number.text() #kullanıcının boyut olarak girdiği değer
+        print("Boyut Değeri:  " + self.boyut)
 
         if 'logDf' in locals() or 'logDf' in globals():
             if self.boyut == '':
@@ -1209,41 +1367,49 @@ class Ui_MainWindow(object):
                 message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
                 message_box.setText("Lütfen Geçerli Bir Boyut Değeri Giriniz! \n Boyut= 1 - 2 - 3")
                 message_box.setIcon(QMessageBox.Information)
-                message_box.exec_()  # Mesaj kutusunu gösterme
+                message_box.exec_()  # Mesaj kutusunu gösterme              
+            try:
 
-            elif int(self.boyut) == 1:
-                self.frame_4.setHidden(False) #Sutun 1
-                self.frame_5.setHidden(True) #Sutun 2
-                self.frame_10.setHidden(True) #Sutun 3
-                self.frame_6.setHidden(False) #Grafikler
-                self.frame_7.setHidden(False) #Grafik Çizdir
-                self.frame_8.setHidden(False) #boyut degeri gir
-                self.frame_9.setHidden(False) #boyur degeri buton
-                self.frame_11.setHidden(False) #dosya ekle buton
-                self.frame_15.setHidden(True) #dosya ekle 2 buton
-            
-            elif int(self.boyut) == 2: 
-                self.frame_4.setHidden(False) #Sutun 1
-                self.frame_5.setHidden(False) #Sutun 2
-                self.frame_10.setHidden(True) #Sutun 3
-                self.frame_6.setHidden(False) #Grafikler
-                self.frame_7.setHidden(False) #Grafik Çizdir
-                self.frame_8.setHidden(False) #boyut degeri gir
-                self.frame_9.setHidden(False) #boyur degeri buton
-                self.frame_11.setHidden(False) #dosya ekle buton
-                self.frame_15.setHidden(True) #dosya ekle 2 buton
-            
-            elif int(self.boyut) == 3:
-                self.frame_4.setHidden(False) #Sutun 1
-                self.frame_5.setHidden(False) #Sutun 2
-                self.frame_10.setHidden(False) #Sutun 3
-                self.frame_6.setHidden(False) #Grafikler
-                self.frame_7.setHidden(False) #Grafik Çizdir
-                self.frame_8.setHidden(False) #boyut degeri gir
-                self.frame_9.setHidden(False) #boyur degeri buton
-                self.frame_11.setHidden(False) #dosya ekle buton
-                self.frame_15.setHidden(True) #dosya ekle 2 buton
-            
+                    #message_box.setText("Boyut Değeri String Olamaz! \n Lütfen Geçerli Bir Boyut Değeri Giriniz! \n Boyut= 1 - 2 - 3")
+                if int(self.boyut) == 1 or self.boyut == '1':
+                    self.frame_4.setHidden(False) #Sutun 1
+                    self.frame_5.setHidden(True) #Sutun 2
+                    self.frame_10.setHidden(True) #Sutun 3
+                    self.frame_6.setHidden(False) #Grafikler
+                    self.frame_7.setHidden(False) #Grafik Çizdir
+                    self.frame_8.setHidden(False) #boyut degeri gir
+                    self.frame_9.setHidden(False) #boyur degeri buton
+                    self.frame_11.setHidden(False) #dosya ekle buton
+                    self.frame_15.setHidden(True) #dosya ekle 2 buton
+
+                elif int(self.boyut) == 2 or self.boyut =='2': 
+                    self.frame_4.setHidden(False) #Sutun 1
+                    self.frame_5.setHidden(False) #Sutun 2
+                    self.frame_10.setHidden(True) #Sutun 3
+                    self.frame_6.setHidden(False) #Grafikler
+                    self.frame_7.setHidden(False) #Grafik Çizdir
+                    self.frame_8.setHidden(False) #boyut degeri gir
+                    self.frame_9.setHidden(False) #boyur degeri buton
+                    self.frame_11.setHidden(False) #dosya ekle buton
+                    self.frame_15.setHidden(True) #dosya ekle 2 buton
+
+                elif int(self.boyut) == 3 or self.boyut == '3':
+                    self.frame_4.setHidden(False) #Sutun 1
+                    self.frame_5.setHidden(False) #Sutun 2
+                    self.frame_10.setHidden(False) #Sutun 3
+                    self.frame_6.setHidden(False) #Grafikler
+                    self.frame_7.setHidden(False) #Grafik Çizdir
+                    self.frame_8.setHidden(False) #boyut degeri gir
+                    self.frame_9.setHidden(False) #boyur degeri buton
+                    self.frame_11.setHidden(False) #dosya ekle buton
+                    self.frame_15.setHidden(True) #dosya ekle 2 buton
+
+            except ValueError:
+                message_box = QMessageBox()  # Mesaj kutusu oluşturma
+                message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+                message_box.setText("Lütfen Geçerli Bir Boyut Değeri Giriniz! \n Boyut= 1 - 2 - 3")
+                message_box.setIcon(QMessageBox.Information)
+                message_box.exec_()  # Mesaj kutusunu gösterme
 
             if self.boyut.isdigit():
                 if int(self.boyut) ==1 or int(self.boyut) ==2 or int(self.boyut) ==3: # bu kısım çalışıyor
@@ -1258,27 +1424,27 @@ class Ui_MainWindow(object):
                     message_box.setIcon(QMessageBox.Information)
                     message_box.exec_()  # Mesaj kutusunu gösterme
 
-            elif isinstance(self.boyut, str):
-                message_box = QMessageBox()  # Mesaj kutusu oluşturma
-                message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-                message_box.setText("Lütfen Geçerli Bir Boyut Değeri Giriniz! \n Boyut= 1 - 2 - 3")
-                message_box.setIcon(QMessageBox.Information)
-                message_box.exec_()  # Mesaj kutusunu gösterme
+            #elif isinstance(self.boyut, str):
+            #    message_box = QMessageBox()  # Mesaj kutusu oluşturma
+            #    message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+            #    message_box.setText("Lütfen Geçerli Bir Boyut Değeri Giriniz! \n Boyut= 1 - 2 - 3")
+            #    message_box.setIcon(QMessageBox.Information)
+            #    message_box.exec_()  # Mesaj kutusunu gösterme
             
 
-            else:                
-                message_box = QMessageBox()  # Mesaj kutusu oluşturma
-                message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-                message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv dosyası ekleyin)")
-                message_box.setIcon(QMessageBox.Information)
-                message_box.exec_()  # Mesaj kutusunu gösterme
+            #else:                
+            #    message_box = QMessageBox()  # Mesaj kutusu oluşturma
+            #    message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+            #    message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv veya .json dosyası ekleyin)")
+            #    message_box.setIcon(QMessageBox.Information)
+            #    message_box.exec_()  # Mesaj kutusunu gösterme
             
-        else:
-            message_box = QMessageBox()  # Mesaj kutusu oluşturma
-            message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-            message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv dosyası ekleyin)")
-            message_box.setIcon(QMessageBox.Information)
-            message_box.exec_()  # Mesaj kutusunu gösterme
+        #else:
+        #    message_box = QMessageBox()  # Mesaj kutusu oluşturma
+        #    message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+        #    message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv veya .json dosyası ekleyin)")
+        #    message_box.setIcon(QMessageBox.Information)
+        #    message_box.exec_()  # Mesaj kutusunu gösterme
 
     def combobox_ayarla(self):
         _translate = QtCore.QCoreApplication.translate
@@ -1334,9 +1500,6 @@ class Ui_MainWindow(object):
         
         self.sayac=0
 
-        global grafik_cizdirildi
-        grafik_cizdirildi = 'grafik_cizdirildi'
-
         self.deger1_column = self.comboBox_column_number_1.currentText()
         self.deger2_column = self.comboBox_column_number_2.currentText()
         self.deger3_column = self.comboBox_column_number_3.currentText()
@@ -1348,8 +1511,8 @@ class Ui_MainWindow(object):
                 grDgr1 = grafikler1[self.grafikDeger]
                 dgr1 = columnA[self.deger1_column]
                 firstColumn = list(columnA.keys())[dgr1]
-                sirali = logDf.sort_values(by=[firstColumn], ascending=False, ignore_index=True)
-                columnName1 = logDf[firstColumn].name
+                sirali = logDf_normalized.sort_values(by=[firstColumn], ascending=False, ignore_index=True)
+                columnName1 = logDf_normalized[firstColumn].name
                 
 
             # ---Grafikleri Ekrana Yazdırma---
@@ -1357,7 +1520,7 @@ class Ui_MainWindow(object):
                 # HeatMap
                 if grDgr1 == 1:
                     fig, ax = plt.subplots(figsize=(20, 12))  #Tablonun boyutunu belirliyor
-                    heatmap(logDf.corr(), #HeadMap değerlerini alır
+                    heatmap(logDf_normalized.corr(), #HeadMap değerlerini alır
                         annot=True, #Saydamlık saplayarak yazıların gözükmesini sağlar
                         linewidths=.5, #her bir değer arasındaki çizgilerin kalınlığını veriyor
                         fmt= '.2f', #kaç sıfır olacağını belirler
@@ -1365,12 +1528,12 @@ class Ui_MainWindow(object):
                         ax=ax)
                     plt.title('HeatMap', fontsize=15)
                     self.grafik_widget.setFixedSize(1600, 800)
-                    plt.savefig("graphic-outputs/" + 'HeatMap Plot.png', dpi=70)                
+                    grafik_cizdirildi = plt.savefig("graphic-outputs/" + 'HeatMap Plot.png', dpi=70)                
                     self.grafik_widget.setPixmap(QtGui.QPixmap("graphic-outputs/" + 'HeatMap Plot.png'))
-                    ax.set_xticks(range(len(logDf.columns)))  # x ekseni etiketlerini ayarla
-                    ax.set_yticks(range(len(logDf.columns)))  # y ekseni etiketlerini ayarla
-                    ax.set_xticklabels(logDf.columns, fontsize=13, rotation=90)  # x ekseni etiketlerinin boyutunu ve dönme açısını ayarla
-                    ax.set_yticklabels(logDf.columns, fontsize=13)  # y ekseni etiketlerinin boyutunu ayarla
+                    ax.set_xticks(range(len(logDf_normalized.columns)))  # x ekseni etiketlerini ayarla
+                    ax.set_yticks(range(len(logDf_normalized.columns)))  # y ekseni etiketlerini ayarla
+                    ax.set_xticklabels(logDf_normalized.columns, fontsize=13, rotation=90)  # x ekseni etiketlerinin boyutunu ve dönme açısını ayarla
+                    ax.set_yticklabels(logDf_normalized.columns, fontsize=13)  # y ekseni etiketlerinin boyutunu ayarla
                     self.grafik_widget.setAlignment(Qt.AlignCenter)
                     
 
@@ -1380,7 +1543,7 @@ class Ui_MainWindow(object):
                 # Line Chart
                 elif grDgr1 == 2:
                     fig, ax = plt.subplots(figsize=(24, 12))
-                    logDf.iloc[:, dgr1].plot(kind = 'line', #Türü line olacak
+                    logDf_normalized.iloc[:, dgr1].plot(kind = 'line', #Türü line olacak
                                color = 'green', # çizgi rengi
                                label = columnName1, #çizginin adı
                                linewidth=2, #çizginin kalınlığı
@@ -1404,7 +1567,7 @@ class Ui_MainWindow(object):
                 # Histogram Plot
                 elif grDgr1 == 3:
                     fig, ax = plt.subplots(figsize=(24, 12) )
-                    histplot(x=logDf.columns[dgr1], data=logDf, ax=ax)
+                    histplot(x=logDf_normalized.columns[dgr1], data=logDf_normalized, ax=ax)
                     plt.xlabel(columnName1,fontsize=15)
                     plt.ylabel("Count",fontsize=15)
                     plt.xticks(rotation= 90, fontsize=13)
@@ -1420,7 +1583,7 @@ class Ui_MainWindow(object):
                 elif grDgr1 == 4:
                     fig, ax = plt.subplots(figsize=(24, 12) )
                     set(font_scale=0.5)
-                    countplot( y = logDf.columns[dgr1], data=logDf,ax=ax)
+                    countplot( y = logDf_normalized.columns[dgr1], data=logDf_normalized,ax=ax)
                     plt.xlabel("Count",fontsize=15)
                     plt.ylabel(columnName1,fontsize=15)
                     plt.xticks(rotation= 70, fontsize=13)
@@ -1441,10 +1604,10 @@ class Ui_MainWindow(object):
                     dgr1 = columnA[self.deger1_column]
                     dgr2 = columnA[self.deger2_column]
                     firstColumn = list(columnA.keys())[dgr1]
-                    sirali = logDf.sort_values(by=[firstColumn], ascending=False, ignore_index=True)
+                    sirali = logDf_normalized.sort_values(by=[firstColumn], ascending=False, ignore_index=True)
                     secondColumn = list(columnA.keys())[dgr2]
-                    columnName1 = logDf[firstColumn].name
-                    columnName2 = logDf[secondColumn].name
+                    columnName1 = logDf_normalized[firstColumn].name
+                    columnName2 = logDf_normalized[secondColumn].name
 
                     # Line Chart
                     if grDgr2 == 1:
@@ -1458,14 +1621,14 @@ class Ui_MainWindow(object):
                         else:
                             fig, ax = plt.subplots(figsize=(24, 12) )
 
-                            logDf.iloc[:, dgr1].plot(kind = 'line', #Türü line olacak
+                            logDf_normalized.iloc[:, dgr1].plot(kind = 'line', #Türü line olacak
                                         color = 'green', # çizgi rengi
                                         label = columnName1, #çizginin adı
                                         linewidth=2, #çizginin kalınlığı
                                         alpha = 0.5, #saydamlık
                                         grid = False, #arkaplan çizgileri
                                         linestyle = ':',ax=ax)
-                            logDf.iloc[:, dgr2].plot(kind='line',
+                            logDf_normalized.iloc[:, dgr2].plot(kind='line',
                                         color = 'red',
                                         label = columnName2,
                                         linewidth=2, 
@@ -1500,9 +1663,9 @@ class Ui_MainWindow(object):
                             fig.subplots_adjust(left=0.1)
 
 
-                            logDf.plot(kind='scatter', x=dgr1, y=dgr2, alpha=0.5, color='red', figsize=(22,12), ax=ax)
-                            plt.xlabel(logDf.columns[dgr1], fontsize=15)
-                            plt.ylabel(logDf.columns[dgr2], fontsize=15)
+                            logDf_normalized.plot(kind='scatter', x=dgr1, y=dgr2, alpha=0.5, color='red', figsize=(22,12), ax=ax)
+                            plt.xlabel(logDf_normalized.columns[dgr1], fontsize=15)
+                            plt.ylabel(logDf_normalized.columns[dgr2], fontsize=15)
                             plt.xticks(rotation= 90, fontsize=13)
                             plt.yticks(fontsize=13)
                             plt.title(columnName1 + '  -  ' + columnName2 + ' Scatter Plot', fontsize=18)
@@ -1523,19 +1686,19 @@ class Ui_MainWindow(object):
                             message_box.exec_()  # Mesaj kutusunu gösterme
 
                         else:
-                            fig, ax = plt.subplots(figsize=(25, 12) )
+                            fig, ax = plt.subplots(figsize=(24, 12) )
                             barplot(x=sirali.index, y=sirali.columns[dgr1], data=sirali, ax=ax)
                             plt.xlabel(columnName1, fontsize=15) # x eksenindeki label adı
                             plt.ylabel(columnName2, fontsize=15) #y eksenindeki label adı
-                            plt.xticks(rotation= 90, fontsize=3)
+                            plt.xticks(rotation= 90, fontsize=8)
                             plt.yticks(fontsize=13)
                             plt.title(columnName1 + '  -  ' + columnName2 + ' Bar Grafiği', fontsize=18)
 
                             plt.savefig("graphic-outputs/" + columnName1 + '  -  ' + columnName2 + ' Bar Plot.png', dpi=70)                
-                            self.grafik_widget.setFixedSize(1500, 900)
+                            self.grafik_widget.setFixedSize(1700, 850)
+                            self.grafik_widget.setAlignment(Qt.AlignLeft)
                             self.grafik_widget.setPixmap(QtGui.QPixmap("graphic-outputs/" + columnName1 + '  -  ' + columnName2 + ' Bar Plot.png'))
-                            self.grafik_widget.setAlignment(Qt.AlignCenter)
-                            
+
 
                     # Strip Plot
                     elif grDgr2 == 4:
@@ -1550,13 +1713,13 @@ class Ui_MainWindow(object):
                             fig, ax = plt.subplots(figsize=(24, 12) ) # Grafik Boyutu
 
                             ax.set_title('{} - {} Scatter Plot'.format(firstColumn, secondColumn), fontsize=20) # Grafiğin başlığı
-                            stripplot(data=logDf, x=firstColumn, y=secondColumn, ax=ax)
+                            stripplot(data=logDf_normalized, x=firstColumn, y=secondColumn, ax=ax)
                             ax.set_xlabel(firstColumn, fontsize=15)
                             ax.set_ylabel(secondColumn, fontsize=15)
                             plt.xticks(rotation= 90, fontsize=13)
                             plt.yticks(fontsize=13)
 
-                            self.grafik_widget.setFixedSize(1500, 800)
+                            self.grafik_widget.setFixedSize(1600, 900)
                             plt.savefig("graphic-outputs/" + columnName1 + '  -  ' + columnName2 + ' Strip Plot.png', dpi=70)                
                             self.grafik_widget.setPixmap(QtGui.QPixmap("graphic-outputs/" + columnName1 + '  -  ' + columnName2 + ' Strip Plot.png'))
                             self.grafik_widget.setAlignment(Qt.AlignCenter)
@@ -1574,7 +1737,7 @@ class Ui_MainWindow(object):
                         else:
                             fig, ax = plt.subplots(figsize=(40, 40))
 
-                            grafik = jointplot(x=firstColumn, y=secondColumn, data=logDf)
+                            grafik = jointplot(x=firstColumn, y=secondColumn, data=logDf_normalized)
                             grafik.plot(scatterplot, histplot)
                             plt.subplots_adjust(top=0.9)  # Grafiklerin başlık için yer bırakması için üst kenarı ayarla
                             plt.suptitle('{} - {} Joint Plot'.format(columnName1, columnName2), fontsize=20) # Grafiğin başlığı
@@ -1602,7 +1765,7 @@ class Ui_MainWindow(object):
                         else:
                             fig, ax = plt.subplots(figsize=(24, 12))
 
-                            kdeplot(data=logDf, x= firstColumn, y=secondColumn, maker="kind", fill=True, fontsize=15, ax=ax)
+                            kdeplot(data=logDf_normalized, x= firstColumn, y=secondColumn, maker="kind", fill=True, fontsize=15, ax=ax)
                             plt.title(columnName1 + '  -  ' + columnName2 + ' KDE Plot', fontsize=20)
                             ax.set_xlabel(firstColumn, fontsize=15)
                             ax.set_ylabel(secondColumn, fontsize=15)
@@ -1617,18 +1780,18 @@ class Ui_MainWindow(object):
 
 
             # 3 Adet Column
-            elif int(self.boyut)==3:
+            elif logDf.shape[1] > 2 and int(self.boyut)==3:
                 grDgr3 = grafikler3[self.grafikDeger]
                 dgr1 = columnA[self.deger1_column]
                 dgr2 = columnA[self.deger2_column]
                 dgr3 = columnA[self.deger3_column]
                 firstColumn = list(columnA.keys())[dgr1]
-                sirali = logDf.sort_values(by=[firstColumn], ascending=False, ignore_index=True)
+                sirali = logDf_normalized.sort_values(by=[firstColumn], ascending=False, ignore_index=True)
                 secondColumn = list(columnA.keys())[dgr2]
                 thirdColumn = list(columnA.keys())[dgr3]
-                columnName1 = logDf[firstColumn].name
-                columnName2 = logDf[secondColumn].name
-                columnName3 = logDf[thirdColumn].name
+                columnName1 = logDf_normalized[firstColumn].name
+                columnName2 = logDf_normalized[secondColumn].name
+                columnName3 = logDf_normalized[thirdColumn].name
 
                 if grDgr3==1:
                     if firstColumn == secondColumn or secondColumn == thirdColumn or firstColumn == thirdColumn:
@@ -1639,12 +1802,12 @@ class Ui_MainWindow(object):
                             message_box.exec_()  # Mesaj kutusunu gösterme
                     
                     else:
-                        fig = plt.figure(figsize=(20, 12))
+                        fig = plt.figure(figsize=(17, 12))
                         ax = fig.add_subplot(111, projection="3d")
 
-                        x_data = logDf[logDf.columns[dgr1]]
-                        y_data = logDf[logDf.columns[dgr2]]
-                        z_data = logDf[logDf.columns[dgr3]]
+                        x_data = logDf_normalized[logDf_normalized.columns[dgr1]]
+                        y_data = logDf_normalized[logDf_normalized.columns[dgr2]]
+                        z_data = logDf_normalized[logDf_normalized.columns[dgr3]]
 
                         ax.scatter(x_data, y_data, z_data)
 
@@ -1656,9 +1819,9 @@ class Ui_MainWindow(object):
                         plt.yticks(fontsize=13)
                         plt.xticks(fontsize=13)
 
-                        plt.savefig("graphic-outputs/" + firstColumn + ' - ' + secondColumn + ' - ' + thirdColumn + ' 3D Scatter Plot.png', dpi=80)
+                        plt.savefig("graphic-outputs/" + firstColumn + ' - ' + secondColumn + ' - ' + thirdColumn + ' 3D Scatter Plot.png', dpi=75)
 
-                        self.grafik_widget.setFixedSize(1150, 800)
+                        self.grafik_widget.setFixedSize(1850, 800)
                         self.grafik_widget.setPixmap(QtGui.QPixmap("graphic-outputs/" + firstColumn + ' - ' + secondColumn + ' - ' + thirdColumn + ' 3D Scatter Plot.png'))
                         
 
@@ -1674,21 +1837,21 @@ class Ui_MainWindow(object):
                     else:
                         fig, ax = plt.subplots(figsize=(20, 12))
 
-                        logDf.iloc[:, dgr1].plot(kind = 'line', #Türü line olacak
+                        logDf_normalized.iloc[:, dgr1].plot(kind = 'line', #Türü line olacak
                                     color = 'green', # çizgi rengi
                                     label = columnName1, #çizginin adı
                                     linewidth=2, #çizginin kalınlığı
                                     alpha = 0.5, #saydamlık
                                     grid = True, #arkaplan çizgileri
                                     linestyle = ':')
-                        logDf.iloc[:, dgr2].plot(kind='line',
+                        logDf_normalized.iloc[:, dgr2].plot(kind='line',
                                     color = 'red',
                                     label = columnName2,
                                     linewidth=2, 
                                     alpha = 0.5,
                                     grid = True, #Grid değeri en son girilen değeri alıyor. 
                                     linestyle = '-.')
-                        logDf.iloc[:, dgr3].plot(kind='line',
+                        logDf_normalized.iloc[:, dgr3].plot(kind='line',
                                     color = 'blue',
                                     label = columnName3,
                                     linewidth=2, 
@@ -1753,7 +1916,7 @@ class Ui_MainWindow(object):
         self.pushButton_9.setText(_translate("MainWindow", "Uzaklaştır"))
         self.pushButton_9.clicked.connect(self.zoom_out)
         self.pushButton_10.setText(_translate("MainWindow", "Reset"))
-        self.pushButton_10.clicked.connect(self.grafik_ciz)
+        self.pushButton_10.clicked.connect(self.reset_yap)
         self.label_title.setToolTip(_translate("MainWindow", "<html><head/><body><p><br/></p></body></html>"))
         self.label_title.setText(_translate("MainWindow", "Grafik Çizdirme Araci"))
         self.pushButton_6.setText(_translate("MainWindow", "Grafikler"))
