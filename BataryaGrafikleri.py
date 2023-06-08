@@ -9,7 +9,7 @@ import pandas as pd
 from plotly.offline import iplot,plot
 from collections import Counter
 from matplotlib.figure import Figure
-import json, csv, os, glob
+import json, csv, os, glob, time
 from sklearn.preprocessing import MinMaxScaler
 
 
@@ -40,6 +40,7 @@ class Ui_MainWindow(object):
         logDf_normalized=None
         describe_table=None
         columnA=None
+        column_count=None
         self.sayac=0
         self.boyut= 3
         self.grafikDeger=3
@@ -225,7 +226,7 @@ class Ui_MainWindow(object):
         self.label_icon.setStyleSheet("border-radius:10px;\n"
 "")
         self.label_icon.setText("")
-        self.label_icon.setPixmap(QtGui.QPixmap("anayurt-icon.png"))
+        self.label_icon.setPixmap(QtGui.QPixmap("uygulama-icon.png"))
         self.label_icon.setStyleSheet("border-radius: 50%;")
         self.label_icon.setScaledContents(True)
         self.label_icon.setWordWrap(False)
@@ -950,6 +951,7 @@ class Ui_MainWindow(object):
         global columnA
         global logDf
         global logData
+        global column_count
 
         file_dialog = QFileDialog()
         file_dialog.setFileMode(QFileDialog.AnyFile)
@@ -1042,6 +1044,14 @@ class Ui_MainWindow(object):
                             multiple_outliers = list(i for i, v in outlier_indices.items() if v > 2)
 
                             return multiple_outliers
+                            
+
+                        # Her bir sütunun tüm değerlerinin beyaz olduğu sütunları tespit et
+                        white_columns = logDf.columns[(logDf == 0).all()]
+
+                        # Beyaz sütunları DataFrame'den sil
+                        logDf = logDf.drop(columns=white_columns)
+
 
                         columnA = dict(zip(logDf.columns, range(len(logDf.columns))))
 
@@ -1061,6 +1071,9 @@ class Ui_MainWindow(object):
 
                         print('-'*100)
                         print(logDf_normalized)
+
+                        #column_count = logDf.shape[1]
+                        #print("Column Sayisi: " + column_count)
 
                     except:
                         message_box = QMessageBox()  # Mesaj kutusu oluşturma
@@ -1167,6 +1180,9 @@ class Ui_MainWindow(object):
 
                         print('-'*100)
                         print(logDf_normalized)
+
+                        column_count = logDf.shape[1]
+                        print("Column Sayisi: " + column_count)
 
                     except:
                         message_box = QMessageBox()  # Mesaj kutusu oluşturma
@@ -1347,13 +1363,6 @@ class Ui_MainWindow(object):
         self.grafik_gorsel.setObjectName("grafik_gorsel")
 
 
-    
-        
-
-
-
-    
-
 #-------------------------------------------------------------------------------------Buradan İtibaren Değişim ve İndirgemeler Yapıldı------------------------------------------------------------------------------#
 
 #Kullanıcının girdiği toplam boyut sayısını bu kısımda alıyoruuz
@@ -1424,28 +1433,6 @@ class Ui_MainWindow(object):
                     message_box.setIcon(QMessageBox.Information)
                     message_box.exec_()  # Mesaj kutusunu gösterme
 
-            #elif isinstance(self.boyut, str):
-            #    message_box = QMessageBox()  # Mesaj kutusu oluşturma
-            #    message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-            #    message_box.setText("Lütfen Geçerli Bir Boyut Değeri Giriniz! \n Boyut= 1 - 2 - 3")
-            #    message_box.setIcon(QMessageBox.Information)
-            #    message_box.exec_()  # Mesaj kutusunu gösterme
-            
-
-            #else:                
-            #    message_box = QMessageBox()  # Mesaj kutusu oluşturma
-            #    message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-            #    message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv veya .json dosyası ekleyin)")
-            #    message_box.setIcon(QMessageBox.Information)
-            #    message_box.exec_()  # Mesaj kutusunu gösterme
-            
-        #else:
-        #    message_box = QMessageBox()  # Mesaj kutusu oluşturma
-        #    message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
-        #    message_box.setText("        Gösterilecek Log Dosyası Bulunamadı!\n             Lütfen Log Dosyasını Yükleyin! \n (Dosya ekle butonuna tıklayarak .csv veya .json dosyası ekleyin)")
-        #    message_box.setIcon(QMessageBox.Information)
-        #    message_box.exec_()  # Mesaj kutusunu gösterme
-
     def combobox_ayarla(self):
         _translate = QtCore.QCoreApplication.translate
 
@@ -1499,6 +1486,7 @@ class Ui_MainWindow(object):
         self.pushButton_10.setHidden(False) #Reset
         
         self.sayac=0
+        
 
         self.deger1_column = self.comboBox_column_number_1.currentText()
         self.deger2_column = self.comboBox_column_number_2.currentText()
@@ -1519,25 +1507,34 @@ class Ui_MainWindow(object):
 
                 # HeatMap
                 if grDgr1 == 1:
-                    fig, ax = plt.subplots(figsize=(20, 12))  #Tablonun boyutunu belirliyor
-                    heatmap(logDf_normalized.corr(), #HeadMap değerlerini alır
-                        annot=True, #Saydamlık saplayarak yazıların gözükmesini sağlar
-                        linewidths=.5, #her bir değer arasındaki çizgilerin kalınlığını veriyor
-                        fmt= '.2f', #kaç sıfır olacağını belirler
-                        linecolor='black',
-                        ax=ax)
-                    plt.title('HeatMap', fontsize=15)
-                    self.grafik_widget.setFixedSize(1600, 800)
-                    grafik_cizdirildi = plt.savefig("graphic-outputs/" + 'HeatMap Plot.png', dpi=70)                
-                    self.grafik_widget.setPixmap(QtGui.QPixmap("graphic-outputs/" + 'HeatMap Plot.png'))
-                    ax.set_xticks(range(len(logDf_normalized.columns)))  # x ekseni etiketlerini ayarla
-                    ax.set_yticks(range(len(logDf_normalized.columns)))  # y ekseni etiketlerini ayarla
-                    ax.set_xticklabels(logDf_normalized.columns, fontsize=13, rotation=90)  # x ekseni etiketlerinin boyutunu ve dönme açısını ayarla
-                    ax.set_yticklabels(logDf_normalized.columns, fontsize=13)  # y ekseni etiketlerinin boyutunu ayarla
-                    self.grafik_widget.setAlignment(Qt.AlignCenter)
+                    column_count = len(logDf.columns)
+                    if column_count > 15:
+                        message_box = QMessageBox()  # Mesaj kutusu oluşturma
+                        message_box.setWindowTitle("Grafik Çizim Aracı Uyarı!")
+                        message_box.setText("Veri setinde {} adet farklı column bulunmakta. \nBu işlem HATA! verebilir. Lütfen farklı bir grafik seçiniz".format(column_count))
+                        message_box.setIcon(QMessageBox.Information)
+                        message_box.exec_()  # Mesaj kutusunu gösterme
+                    else:
+                        fig, ax = plt.subplots(figsize=(20, 12))  #Tablonun boyutunu belirliyor
+                        heatmap(logDf_normalized.corr(), #HeadMap değerlerini alır
+                            annot=True, #Saydamlık saplayarak yazıların gözükmesini sağlar
+                            linewidths=.5, #her bir değer arasındaki çizgilerin kalınlığını veriyor
+                            fmt= '.2f', #kaç sıfır olacağını belirler
+                            linecolor='black',
+                            ax=ax)
+                        plt.title('HeatMap', fontsize=15)
+                        self.grafik_widget.setFixedSize(1600, 800)
+                        grafik_cizdirildi = plt.savefig("graphic-outputs/" + 'HeatMap Plot.png', dpi=70)                
+                        self.grafik_widget.setPixmap(QtGui.QPixmap("graphic-outputs/" + 'HeatMap Plot.png'))
+                        ax.set_xticks(range(len(logDf_normalized.columns)))  # x ekseni etiketlerini ayarla
+                        ax.set_yticks(range(len(logDf_normalized.columns)))  # y ekseni etiketlerini ayarla
+                        ax.set_xticklabels(logDf_normalized.columns, fontsize=13, rotation=90)  # x ekseni etiketlerinin boyutunu ve dönme açısını ayarla
+                        ax.set_yticklabels(logDf_normalized.columns, fontsize=13)  # y ekseni etiketlerinin boyutunu ayarla
+                        self.grafik_widget.setAlignment(Qt.AlignCenter)
+
                     
-
-
+            
+            
 
 
                 # Line Chart
@@ -1779,8 +1776,9 @@ class Ui_MainWindow(object):
                             
 
 
+                
             # 3 Adet Column
-            elif logDf.shape[1] > 2 and int(self.boyut)==3:
+            elif column_count > 2 and int(self.boyut)==3:
                 grDgr3 = grafikler3[self.grafikDeger]
                 dgr1 = columnA[self.deger1_column]
                 dgr2 = columnA[self.deger2_column]
@@ -1885,6 +1883,7 @@ class Ui_MainWindow(object):
             message_box.exec_()  # Mesaj kutusunu gösterme
 
 
+
  # Column Değerleri bu kısımda ekrana yansıtılıyor
  
     def retranslateUi(self, MainWindow):
@@ -1917,7 +1916,6 @@ class Ui_MainWindow(object):
         self.pushButton_9.clicked.connect(self.zoom_out)
         self.pushButton_10.setText(_translate("MainWindow", "Reset"))
         self.pushButton_10.clicked.connect(self.reset_yap)
-        self.label_title.setToolTip(_translate("MainWindow", "<html><head/><body><p><br/></p></body></html>"))
         self.label_title.setText(_translate("MainWindow", "Grafik Çizdirme Araci"))
         self.pushButton_6.setText(_translate("MainWindow", "Grafikler"))
         self.pushButton_6.clicked.connect(self.grafik_goster)
