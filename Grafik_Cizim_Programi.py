@@ -1778,7 +1778,7 @@ class Ui_MainWindow(object):
 
                 
             # 3 Adet Column
-            elif column_count > 2 and int(self.boyut)==3:
+            elif int(self.boyut)==3:
                 grDgr3 = grafikler3[self.grafikDeger]
                 dgr1 = columnA[self.deger1_column]
                 dgr2 = columnA[self.deger2_column]
